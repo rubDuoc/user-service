@@ -16,6 +16,9 @@ import java.util.List;
 @RequestMapping("/api/usuarios")
 public class UsuarioController {
 
+    // Header con el id del usuario que realiza la operacion (el que inicio sesion)
+    public static final String USUARIO_HEADER = "X-Usuario-Id";
+
     private final UsuarioService usuarioService;
 
     public UsuarioController(UsuarioService usuarioService) {
@@ -32,19 +35,24 @@ public class UsuarioController {
         return usuarioService.obtenerPorId(id);
     }
 
+    // Registro: X-Usuario-Id es opcional y solo se necesita para crear un ADMIN (debe ser otro ADMIN)
     @PostMapping
-    public ResponseEntity<UsuarioResponse> crear(@Valid @RequestBody UsuarioRequest request) {
-        return ResponseEntity.status(HttpStatus.CREATED).body(usuarioService.crear(request));
+    public ResponseEntity<UsuarioResponse> crear(@Valid @RequestBody UsuarioRequest request,
+                                                 @RequestHeader(value = USUARIO_HEADER, required = false) Long actorId) {
+        return ResponseEntity.status(HttpStatus.CREATED).body(usuarioService.crear(request, actorId));
     }
 
+    // Solo el propio usuario o un ADMIN
     @PutMapping("/{id}")
-    public UsuarioResponse actualizar(@PathVariable Long id, @Valid @RequestBody UsuarioRequest request) {
-        return usuarioService.actualizar(id, request);
+    public UsuarioResponse actualizar(@PathVariable Long id, @Valid @RequestBody UsuarioRequest request,
+                                      @RequestHeader(USUARIO_HEADER) Long actorId) {
+        return usuarioService.actualizar(id, request, actorId);
     }
 
+    // Solo un ADMIN
     @DeleteMapping("/{id}")
-    public ResponseEntity<Void> eliminar(@PathVariable Long id) {
-        usuarioService.eliminar(id);
+    public ResponseEntity<Void> eliminar(@PathVariable Long id, @RequestHeader(USUARIO_HEADER) Long actorId) {
+        usuarioService.eliminar(id, actorId);
         return ResponseEntity.noContent().build();
     }
 

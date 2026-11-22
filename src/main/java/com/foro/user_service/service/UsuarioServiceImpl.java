@@ -3,6 +3,7 @@ package com.foro.user_service.service;
 import com.foro.user_service.dto.LoginRequest;
 import com.foro.user_service.dto.UsuarioRequest;
 import com.foro.user_service.dto.UsuarioResponse;
+import com.foro.user_service.exception.AccesoDenegadoException;
 import com.foro.user_service.exception.ConflictoException;
 import com.foro.user_service.exception.CredencialesInvalidasException;
 import com.foro.user_service.exception.RecursoNoEncontradoException;
@@ -38,8 +39,13 @@ public class UsuarioServiceImpl implements UsuarioService {
         return UsuarioResponse.from(buscarUsuario(id));
     }
 
+    // Registro publico: siempre como USUARIO. Para crear un ADMIN, quien lo crea debe ser ADMIN.
     @Override
-    public UsuarioResponse crear(UsuarioRequest request) {
+    public UsuarioResponse crear(UsuarioRequest request, Long actorId) {
+        Rol rol = request.rol() == null ? Rol.USUARIO : request.rol();
+        if (rol == Rol.ADMIN && (actorId == null || !esAdmin(buscarActor(actorId)))) {
+            throw new AccesoDenegadoException("Solo un administrador puede crear usuarios con rol ADMIN");
+        }
         if (usuarioRepository.existsByUsername(request.username())) {
             throw new ConflictoException("El username '" + request.username() + "' ya esta registrado");
         }
@@ -48,15 +54,24 @@ public class UsuarioServiceImpl implements UsuarioService {
         }
         Usuario usuario = new Usuario();
         copiarDatos(request, usuario);
+        usuario.setRol(rol);
         usuario.setFechaRegistro(LocalDateTime.now());
         Usuario guardado = usuarioRepository.save(usuario);
         log.info("Usuario creado: id={}, username={}, rol={}", guardado.getId(), guardado.getUsername(), guardado.getRol());
         return UsuarioResponse.from(guardado);
     }
 
+    // Cada usuario edita solo su propio perfil; un ADMIN puede editar a cualquiera y es el unico que cambia roles
     @Override
-    public UsuarioResponse actualizar(Long id, UsuarioRequest request) {
+    public UsuarioResponse actualizar(Long id, UsuarioRequest request, Long actorId) {
+        Usuario actor = buscarActor(actorId);
         Usuario usuario = buscarUsuario(id);
+        if (!esAdmin(actor) && !actor.getId().equals(id)) {
+            throw new AccesoDenegadoException("Solo puedes modificar tu propio perfil");
+        }
+        if (request.rol() != null && request.rol() != usuario.getRol() && !esAdmin(actor)) {
+            throw new AccesoDenegadoException("Solo un administrador puede cambiar el rol de un usuario");
+        }
         if (!usuario.getUsername().equals(request.username()) && usuarioRepository.existsByUsername(request.username())) {
             throw new ConflictoException("El username '" + request.username() + "' ya esta registrado");
         }
@@ -64,14 +79,21 @@ public class UsuarioServiceImpl implements UsuarioService {
             throw new ConflictoException("El email '" + request.email() + "' ya esta registrado");
         }
         copiarDatos(request, usuario);
-        log.info("Usuario actualizado: id={}", id);
+        if (request.rol() != null) {
+            usuario.setRol(request.rol());
+        }
+        log.info("Usuario actualizado: id={}, por actorId={}", id, actorId);
         return UsuarioResponse.from(usuarioRepository.save(usuario));
     }
 
+    // Solo un ADMIN puede eliminar usuarios
     @Override
-    public void eliminar(Long id) {
+    public void eliminar(Long id, Long actorId) {
+        if (!esAdmin(buscarActor(actorId))) {
+            throw new AccesoDenegadoException("Solo un administrador puede eliminar usuarios");
+        }
         usuarioRepository.delete(buscarUsuario(id));
-        log.info("Usuario eliminado: id={}", id);
+        log.info("Usuario eliminado: id={}, por actorId={}", id, actorId);
     }
 
     @Override
@@ -101,11 +123,20 @@ public class UsuarioServiceImpl implements UsuarioService {
                 .orElseThrow(() -> new RecursoNoEncontradoException("No existe un usuario con id " + id));
     }
 
+    // Usuario que realiza la operacion (header X-Usuario-Id): si no existe, no tiene permisos
+    private Usuario buscarActor(Long actorId) {
+        return usuarioRepository.findById(actorId)
+                .orElseThrow(() -> new AccesoDenegadoException("El usuario " + actorId + " que realiza la operacion no existe"));
+    }
+
+    private boolean esAdmin(Usuario usuario) {
+        return usuario.getRol() == Rol.ADMIN;
+    }
+
     private void copiarDatos(UsuarioRequest request, Usuario usuario) {
         usuario.setUsername(request.username());
         usuario.setEmail(request.email());
         usuario.setPassword(passwordEncoder.encode(request.password()));
         usuario.setNombre(request.nombre());
-        usuario.setRol(request.rol());
     }
 }
