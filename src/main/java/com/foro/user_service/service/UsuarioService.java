@@ -13,11 +13,12 @@ public interface UsuarioService {
 
     UsuarioResponse obtenerPorId(Long id);
 
-    UsuarioResponse crear(UsuarioRequest request);
+    // actorId: usuario que realiza la operacion (header X-Usuario-Id); null en un registro publico
+    UsuarioResponse crear(UsuarioRequest request, Long actorId);
 
-    UsuarioResponse actualizar(Long id, UsuarioRequest request);
+    UsuarioResponse actualizar(Long id, UsuarioRequest request, Long actorId);
 
-    void eliminar(Long id);
+    void eliminar(Long id, Long actorId);
 
     UsuarioResponse login(LoginRequest request);
 
